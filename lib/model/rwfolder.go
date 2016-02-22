@@ -23,6 +23,7 @@ import (
 	"github.com/syncthing/syncthing/lib/scanner"
 	"github.com/syncthing/syncthing/lib/sync"
 	"github.com/syncthing/syncthing/lib/versioner"
+	"github.com/syncthing/syncthing/lib/fswatcher"
 )
 
 // Which filemode bits to preserve
@@ -148,6 +149,9 @@ func (p *rwFolder) Serve() {
 		l.Debugln(p, "next rescan in", intv)
 		p.scanTimer.Reset(intv)
 	}
+
+	fsWatcher := fswatcher.NewFsWatcher(p.dir)
+	go fsWatcher.WaitForEvents()
 
 	// We don't start pulling files until a scan has been completed.
 	initialScanCompleted := false
@@ -311,6 +315,8 @@ func (p *rwFolder) Serve() {
 
 		case next := <-p.delayScan:
 			p.scanTimer.Reset(next)
+		case <-fsWatcher.EventsReady:
+			fsWatcher.ProcessEvents()
 		}
 	}
 }
