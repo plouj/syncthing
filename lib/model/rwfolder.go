@@ -156,7 +156,6 @@ func (p *rwFolder) Serve() {
 	if err != nil {
 		l.Warnln("Unable to setup real-time file change detection")
 	} else {
-		p.delayFullScanForever()
 		go fsWatcher.WaitForEvents()
 	}
 
@@ -297,6 +296,9 @@ func (p *rwFolder) Serve() {
 			if !initialScanCompleted {
 				l.Infoln("Completed initial scan (rw) of folder", p.folder)
 				initialScanCompleted = true
+				if fsWatcher != nil {
+					p.delayFullScanForever()
+				}
 			}
 
 		case req := <-p.scanNow:
