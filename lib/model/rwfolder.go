@@ -370,8 +370,24 @@ func (p *rwFolder) Serve() {
 		case next := <-p.delayScan:
 			p.scanTimer.Reset(next)
 		case <-p.fsWatchChan:
-			fsWatcher.ProcessEvents()
+			l.Debugln(p, "filesystem notification rescan")
+			p.scanSubsIfHealthy(p.folder, fsWatcher.ChangedSubfolders())
 		}
+	}
+}
+
+func (p *rwFolder) scanSubsIfHealthy(folder string, subs []string) {
+	if err := p.model.CheckFolderHealth(folder); err != nil {
+		l.Infoln("Skipping folder", folder, "scan due to folder error:", err)
+		return
+	}
+	if err := p.model.internalScanFolderSubs(folder, subs); err != nil {
+		// Potentially sets the error twice, once in the scanner just
+		// by doing a check, and once here, if the error returned is
+		// the same one as returned by CheckFolderHealth, though
+		// duplicate set is handled by setError.
+		p.setError(err)
+		return
 	}
 }
 
