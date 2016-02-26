@@ -69,7 +69,7 @@ type rwFolder struct {
 	currentChangeSet    *changeset.ChangeSet
 	currentTracker      *currentTracker
 	currentChangeSetMut sync.Mutex
-	fsWatchChan chan fswatcher.FsEvent
+	fsWatchChan chan bool
 }
 
 func newRWFolder(m *Model, shortID protocol.ShortID, cfg config.FolderConfiguration) *rwFolder {
@@ -100,7 +100,7 @@ func newRWFolder(m *Model, shortID protocol.ShortID, cfg config.FolderConfigurat
 		remoteIndex: make(chan struct{}, 1), // This needs to be 1-buffered so that we queue a notification if we're busy doing a pull when it comes.
 
 		currentChangeSetMut: sync.NewMutex(),
-		fsWatchChan: make(chan fswatcher.FsEvent),
+		fsWatchChan: make(chan bool),
 	}
 
 	if p.pullers == 0 {
