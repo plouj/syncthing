@@ -69,7 +69,7 @@ type rwFolder struct {
 	currentChangeSet    *changeset.ChangeSet
 	currentTracker      *currentTracker
 	currentChangeSetMut sync.Mutex
-	fsWatchChan chan bool
+	fsWatchChan chan []fswatcher.FsEvent
 }
 
 func newRWFolder(m *Model, shortID protocol.ShortID, cfg config.FolderConfiguration) *rwFolder {
@@ -100,7 +100,7 @@ func newRWFolder(m *Model, shortID protocol.ShortID, cfg config.FolderConfigurat
 		remoteIndex: make(chan struct{}, 1), // This needs to be 1-buffered so that we queue a notification if we're busy doing a pull when it comes.
 
 		currentChangeSetMut: sync.NewMutex(),
-		fsWatchChan: make(chan bool),
+		fsWatchChan: make(chan []fswatcher.FsEvent),
 	}
 
 	if p.pullers == 0 {
@@ -324,9 +324,10 @@ func (p *rwFolder) Serve() {
 
 		case next := <-p.delayScan:
 			p.scanTimer.Reset(next)
-		case <-p.fsWatchChan:
+		case fsEvents := <-p.fsWatchChan:
 			l.Debugln(p, "filesystem notification rescan")
-			p.scanSubsIfHealthy(p.folder, fsWatcher.ChangedSubfolders())
+			p.scanSubsIfHealthy(p.folder,
+				fswatcher.ChangedSubfolders(fsEvents))
 		}
 	}
 }
