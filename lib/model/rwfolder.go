@@ -347,7 +347,7 @@ func (p *rwFolder) scanSubsIfHealthy(folder string, subs []string) {
 }
 
 func (p *rwFolder) delayFullScanForever() {
-	p.scanTimer.Reset(9999 * time.Hour)
+	p.scanTimer.Stop()
 }
 
 func (p *rwFolder) Stop() {
