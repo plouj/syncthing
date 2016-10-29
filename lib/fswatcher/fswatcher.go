@@ -16,6 +16,7 @@ import (
 
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/scanner"
+	"github.com/syncthing/syncthing/lib/ignore"
 )
 
 type FsEvent struct {
@@ -37,6 +38,7 @@ type FsWatcher struct {
 	notifyTimerNeedsReset bool
 	inProgress            map[string]struct{}
 	folderID              string
+	ignores               *ignore.Matcher
 }
 
 const (
@@ -44,7 +46,7 @@ const (
 	fastNotifyDelay = time.Duration(500) * time.Millisecond
 )
 
-func NewFsWatcher(folderPath string, folderID string) *FsWatcher {
+func NewFsWatcher(folderPath string, folderID string, ignores *ignore.Matcher) *FsWatcher {
 	return &FsWatcher{
 		folderPath:            folderPath,
 		notifyModelChan:       nil,
@@ -55,6 +57,7 @@ func NewFsWatcher(folderPath string, folderID string) *FsWatcher {
 		notifyTimerNeedsReset: false,
 		inProgress:            make(map[string]struct{}),
 		folderID:              folderID,
+		ignores:               ignores,
 	}
 }
 
@@ -108,7 +111,7 @@ func (watcher *FsWatcher) watchFilesystem() {
 func (watcher *FsWatcher) newFsEvent(eventPath string) *FsEvent {
 	if isSubpath(eventPath, watcher.folderPath) {
 		path, _ := filepath.Rel(watcher.folderPath, eventPath)
-		if !shouldIgnore(path) {
+		if !watcher.shouldIgnore(path) {
 			return &FsEvent{path}
 		}
 	}
@@ -187,10 +190,8 @@ func (watcher *FsWatcher) updateInProgressSet(event events.Event) {
 	}
 }
 
-func shouldIgnore(path string) bool {
-	return strings.Contains(path, ".syncthing.") &&
-		strings.HasSuffix(path, ".tmp") ||
-		scanner.IsIgnoredPath(path, nil) ||
+func (watcher *FsWatcher) shouldIgnore(path string) bool {
+	return scanner.IsIgnoredPath(path, watcher.ignores) ||
 		Tempnamer.IsTemporary(path)
 }
 
@@ -201,6 +202,10 @@ func (watcher *FsWatcher) pathInProgress(path string) bool {
 
 func (watcher *FsWatcher) debugf(text string, vals ...interface{}) {
 	l.Debugf(watcher.folderID + ": " + text, vals...)
+}
+
+func (watcher *FsWatcher) UpdateIgnores(ignores *ignore.Matcher) {
+	watcher.ignores = ignores
 }
 
 func (batch FsEventsBatch) GetPaths() []string {
