@@ -188,7 +188,7 @@ func (f *rwFolder) Serve() {
 
 	fswatcher.Tempnamer = defTempNamer
 	f.model.fmut.RLock()
-	fsWatcher := fswatcher.NewFsWatcher(f.dir, f.model.folderIgnores[f.folderID])
+	fsWatcher := fswatcher.NewFsWatcher(f.dir, f.model.folderIgnores[f.folderID], f.folderID)
 	f.model.fmut.RUnlock()
 	fsWatchChan, err := fsWatcher.StartWatchingFilesystem()
 	if err != nil {
