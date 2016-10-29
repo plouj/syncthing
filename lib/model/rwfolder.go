@@ -187,7 +187,7 @@ func (f *rwFolder) Serve() {
 	var prevIgnoreHash string
 
 	fswatcher.Tempnamer = defTempNamer
-	fsWatcher := fswatcher.NewFsWatcher(f.dir)
+	fsWatcher := fswatcher.NewFsWatcher(f.dir, f.folderID)
 	fsWatchChan, err := fsWatcher.StartWatchingFilesystem()
 	if err != nil {
 		l.Warnln(err)

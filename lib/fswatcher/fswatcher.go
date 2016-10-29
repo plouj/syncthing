@@ -36,6 +36,7 @@ type FsWatcher struct {
 	notifyTimer           *time.Timer
 	notifyTimerNeedsReset bool
 	inProgress            map[string]struct{}
+	folderID              string
 }
 
 const (
@@ -43,7 +44,7 @@ const (
 	fastNotifyDelay = time.Duration(500) * time.Millisecond
 )
 
-func NewFsWatcher(folderPath string) *FsWatcher {
+func NewFsWatcher(folderPath string, folderID string) *FsWatcher {
 	return &FsWatcher{
 		folderPath:            folderPath,
 		notifyModelChan:       nil,
@@ -53,11 +54,12 @@ func NewFsWatcher(folderPath string) *FsWatcher {
 		notifyDelay:           fastNotifyDelay,
 		notifyTimerNeedsReset: false,
 		inProgress:            make(map[string]struct{}),
+		folderID:              folderID,
 	}
 }
 
 func (watcher *FsWatcher) StartWatchingFilesystem() (<-chan FsEventsBatch, error) {
-	fsEventChan, err := setupNotifications(watcher.folderPath)
+	fsEventChan, err := watcher.setupNotifications()
 	if err == nil {
 		watcher.WatchingFs = true
 		watcher.fsEventChan = fsEventChan
@@ -70,14 +72,14 @@ func (watcher *FsWatcher) StartWatchingFilesystem() (<-chan FsEventsBatch, error
 
 var maxFiles = 512
 
-func setupNotifications(path string) (chan notify.EventInfo, error) {
+func (watcher *FsWatcher) setupNotifications() (chan notify.EventInfo, error) {
 	c := make(chan notify.EventInfo, maxFiles)
-	if err := notify.Watch(filepath.Join(path, "..."), c, notify.All); err != nil {
+	if err := notify.Watch(filepath.Join(watcher.folderPath, "..."), c, notify.All); err != nil {
 		notify.Stop(c)
 		close(c)
-		return nil, interpretNotifyWatchError(err, path)
+		return nil, interpretNotifyWatchError(err, watcher.folderPath)
 	}
-	l.Debugf("Setup filesystem notification for %s", path)
+	watcher.debugf("Setup filesystem notification for %s", watcher.folderPath)
 	return c, nil
 }
 
@@ -125,7 +127,7 @@ func isSubpath(path string, folderPath string) bool {
 
 func (watcher *FsWatcher) resetNotifyTimerIfNeeded() {
 	if watcher.notifyTimerNeedsReset {
-		l.Debugf("Resetting notifyTimer to %#v\n", watcher.notifyDelay)
+		watcher.debugf("Resetting notifyTimer to %#v\n", watcher.notifyDelay)
 		watcher.notifyTimer.Reset(watcher.notifyDelay)
 		watcher.notifyTimerNeedsReset = false
 	}
@@ -134,7 +136,7 @@ func (watcher *FsWatcher) resetNotifyTimerIfNeeded() {
 func (watcher *FsWatcher) speedUpNotifyTimer() {
 	if watcher.notifyDelay != fastNotifyDelay {
 		watcher.notifyDelay = fastNotifyDelay
-		l.Debugf("Speeding up notifyTimer to %#v\n", fastNotifyDelay)
+		watcher.debugf("Speeding up notifyTimer to %#v\n", fastNotifyDelay)
 		watcher.notifyTimerNeedsReset = true
 	}
 }
@@ -142,14 +144,14 @@ func (watcher *FsWatcher) speedUpNotifyTimer() {
 func (watcher *FsWatcher) slowDownNotifyTimer() {
 	if watcher.notifyDelay != slowNotifyDelay {
 		watcher.notifyDelay = slowNotifyDelay
-		l.Debugf("Slowing down notifyTimer to %#v\n", watcher.notifyDelay)
+		watcher.debugf("Slowing down notifyTimer to %#v\n", watcher.notifyDelay)
 		watcher.notifyTimerNeedsReset = true
 	}
 }
 
 func (watcher *FsWatcher) storeFsEvent(event *FsEvent) {
 	if watcher.pathInProgress(event.path) {
-		l.Debugf("Skipping notification for finished path: %s\n",
+		watcher.debugf("Skipping notification for finished path: %s\n",
 			event.path)
 	} else {
 		watcher.fsEvents[event.path] = event
@@ -159,7 +161,7 @@ func (watcher *FsWatcher) storeFsEvent(event *FsEvent) {
 func (watcher *FsWatcher) actOnTimer() {
 	watcher.notifyTimerNeedsReset = true
 	if len(watcher.fsEvents) > 0 {
-		l.Debugf("Notifying about %d fs events\n", len(watcher.fsEvents))
+		watcher.debugf("Notifying about %d fs events\n", len(watcher.fsEvents))
 		watcher.notifyModelChan <- watcher.fsEvents
 	} else {
 		watcher.slowDownNotifyTimer()
@@ -195,6 +197,10 @@ func shouldIgnore(path string) bool {
 func (watcher *FsWatcher) pathInProgress(path string) bool {
 	_, exists := watcher.inProgress[path]
 	return exists
+}
+
+func (watcher *FsWatcher) debugf(text string, vals ...interface{}) {
+	l.Debugf(watcher.folderID + ": " + text, vals...)
 }
 
 func (batch FsEventsBatch) GetPaths() []string {
