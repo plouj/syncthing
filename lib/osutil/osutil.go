@@ -92,6 +92,14 @@ func InWritableDir(fn func(string) error, path string) error {
 	return fn(path)
 }
 
+func RealPath(path string) (string, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
+}
+
 func ExpandTilde(path string) (string, error) {
 	if path == "~" {
 		return getHomeDir()
