@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/syncthing/syncthing/lib/events"
+	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/scanner"
 	"github.com/syncthing/syncthing/lib/sync"
 	"github.com/syncthing/syncthing/lib/ignore"
@@ -112,6 +113,14 @@ func (watcher *FsWatcher) watchFilesystem() {
 }
 
 func (watcher *FsWatcher) newFsEvent(eventPath string) *FsEvent {
+	eventPath, err := osutil.ExpandTilde(eventPath)
+	if err != nil {
+		return nil
+	}
+	eventPath, err = osutil.RealPath(eventPath)
+	if err != nil {
+		return nil
+	}
 	if isSubpath(eventPath, watcher.folderPath) {
 		path, _ := filepath.Rel(watcher.folderPath, eventPath)
 		if !watcher.shouldIgnore(path) {
