@@ -192,7 +192,7 @@ func (f *rwFolder) Serve() {
 	f.model.fmut.RUnlock()
 	fsWatchChan, err := fsWatcher.StartWatchingFilesystem()
 	if err != nil {
-		l.Warnln(err)
+		l.Warnf(`Folder "%s": Starting FS notifications failed: %s`, f.folderID, err)
 	}
 
 	for {
