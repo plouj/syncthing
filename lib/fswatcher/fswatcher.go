@@ -39,7 +39,6 @@ type FsWatcher struct {
 	notifyTimerNeedsReset bool
 	inProgress            map[string]struct{}
 	ignores               *ignore.Matcher
-	ignoresLock           sync.RWMutex
 	folderID              string
 }
 
@@ -59,7 +58,6 @@ func NewFsWatcher(folderPath string, ignores *ignore.Matcher, folderID string) *
 		notifyTimerNeedsReset: false,
 		inProgress:            make(map[string]struct{}),
 		ignores:               ignores,
-		ignoresLock:           sync.NewRWMutex(),
 		folderID:              folderID,
 	}
 }
@@ -194,8 +192,6 @@ func (watcher *FsWatcher) updateInProgressSet(event events.Event) {
 }
 
 func (watcher *FsWatcher) shouldIgnore(path string) bool {
-	watcher.ignoresLock.RLock()
-	defer watcher.ignoresLock.RUnlock()
 	return scanner.IsIgnoredPath(path, watcher.ignores) ||
 		Tempnamer.IsTemporary(path)
 }
@@ -206,9 +202,7 @@ func (watcher *FsWatcher) pathInProgress(path string) bool {
 }
 
 func (watcher *FsWatcher) UpdateIgnores(ignores *ignore.Matcher) {
-	watcher.ignoresLock.Lock()
 	watcher.ignores = ignores
-	watcher.ignoresLock.Unlock()
 }
 
 func (watcher *FsWatcher) debugf(text string, vals ...interface{}) {
