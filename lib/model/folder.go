@@ -6,20 +6,51 @@
 
 package model
 
-import "time"
+import (
+	"time"
+	"github.com/syncthing/syncthing/lib/config"
+	"github.com/syncthing/syncthing/lib/fswatcher"
+)
 
 type folder struct {
 	stateTracker
-	scan  folderScanner
-	model *Model
-	stop  chan struct{}
+	scan      folderScanner
+	model     *Model
+	stop      chan struct{}
+	fsWatcher *fswatcher.FsWatcher
+}
+
+func newFolder(model *Model, cfg config.FolderConfiguration) folder {
+	return folder{
+		stateTracker: newStateTracker(cfg.ID),
+		scan:         newFolderScanner(cfg),
+		stop:         make(chan struct{}),
+		model:        model,
+		fsWatcher:    fswatcher.NewFsWatcher(cfg.Path(), cfg.ID,
+			model.folderIgnores[cfg.ID], defTempNamer,
+			model.folderCfgs[cfg.ID].LongRescanIntervalS),
+	}
 }
 
 func (f *folder) IndexUpdated() {
 }
 
+func (f *folder) IgnoresChanged() {
+	f.model.fmut.RLock()
+	f.fsWatcher.UpdateIgnores(f.model.folderIgnores[f.folderID])
+	f.model.fmut.RUnlock()
+}
+
 func (f *folder) DelayScan(next time.Duration) {
 	f.scan.Delay(next)
+}
+
+func (f *folder) Reschedule() {
+	if f.fsWatcher.WatchingFs {
+		f.scan.LongReschedule()
+	} else {
+		f.scan.Reschedule()
+	}
 }
 
 func (f *folder) Scan(subdirs []string) error {

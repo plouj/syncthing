@@ -24,8 +24,6 @@ type FsEvent struct {
 	time time.Time
 }
 
-var Tempnamer scanner.TempNamer
-
 type FsEventsBatch map[string]*FsEvent
 
 type FsWatcher struct {
@@ -42,6 +40,7 @@ type FsWatcher struct {
 	inProgress            map[string]struct{}
 	folderID              string
 	ignores               *ignore.Matcher
+	tempNamer             scanner.TempNamer
 	// Keeps track the events that are tracked within a directory for event
 	// aggregation. The directory itself is not (yet) to be scanned.
 	trackedDirs           map[string]FsEventsBatch
@@ -54,7 +53,7 @@ const (
 )
 
 func NewFsWatcher(folderPath string, folderID string, ignores *ignore.Matcher,
-	slowNotifyDelayS int) *FsWatcher {
+	tempNamer scanner.TempNamer, slowNotifyDelayS int) *FsWatcher {
 	if slowNotifyDelayS == 0 {
 		slowNotifyDelayS = 60 * 60 * 24
 	}
@@ -70,6 +69,7 @@ func NewFsWatcher(folderPath string, folderID string, ignores *ignore.Matcher,
 		inProgress:            make(map[string]struct{}),
 		folderID:              folderID,
 		ignores:               ignores,
+		tempNamer:             tempNamer,
 		trackedDirs:           make(map[string]FsEventsBatch),
 	}
 }
@@ -267,7 +267,7 @@ func (watcher *FsWatcher) updateInProgressSet(event events.Event) {
 
 func (watcher *FsWatcher) shouldIgnore(path string) bool {
 	return scanner.IsIgnoredPath(path, watcher.ignores) ||
-		Tempnamer.IsTemporary(path)
+		watcher.tempNamer.IsTemporary(path)
 }
 
 func (watcher *FsWatcher) pathInProgress(path string) bool {

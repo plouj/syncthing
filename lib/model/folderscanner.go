@@ -36,20 +36,23 @@ func newFolderScanner(config config.FolderConfiguration) folderScanner {
 	}
 }
 
+func (f *folderScanner) LongReschedule() {
+	f.reschedule(f.longInterval)
+}
+
 func (f *folderScanner) Reschedule() {
-	if f.interval == 0 {
+	f.reschedule(f.interval)
+}
+
+func (f *folderScanner) reschedule(interval time.Duration) {
+	if interval == 0 {
 		return
 	}
 	// Sleep a random time between 3/4 and 5/4 of the configured interval.
-	sleepNanos := (f.interval.Nanoseconds()*3 + rand.Int63n(2*f.interval.Nanoseconds())) / 4
-	interval := time.Duration(sleepNanos) * time.Nanosecond
-	l.Debugln(f, "next rescan in", interval)
-	f.timer.Reset(interval)
-}
-
-func (f *folderScanner) LongReschedule() {
-	l.Debugln(f, "next rescan in", f.longInterval)
-	f.timer.Reset(f.longInterval)
+	sleepNanos := (interval.Nanoseconds()*3 + rand.Int63n(2*interval.Nanoseconds())) / 4
+	randInterval := time.Duration(sleepNanos) * time.Nanosecond
+	l.Debugln(f, "next rescan in", randInterval)
+	f.timer.Reset(randInterval)
 }
 
 func (f *folderScanner) Scan(subdirs []string) error {

@@ -22,7 +22,6 @@ import (
 	"github.com/syncthing/syncthing/lib/db"
 	"github.com/syncthing/syncthing/lib/events"
 	"github.com/syncthing/syncthing/lib/fs"
-	"github.com/syncthing/syncthing/lib/fswatcher"
 	"github.com/syncthing/syncthing/lib/ignore"
 	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/protocol"
@@ -106,16 +105,13 @@ type rwFolder struct {
 	errorsMut sync.Mutex
 
 	initialScanCompleted chan (struct{}) // exposed for testing
+
+	ignoresChanged bool
 }
 
 func newRWFolder(model *Model, cfg config.FolderConfiguration, ver versioner.Versioner, mtimeFS *fs.MtimeFS) service {
 	f := &rwFolder{
-		folder: folder{
-			stateTracker: newStateTracker(cfg.ID),
-			scan:         newFolderScanner(cfg),
-			stop:         make(chan struct{}),
-			model:        model,
-		},
+		folder: newFolder(model, cfg),
 
 		mtimeFS:        mtimeFS,
 		dir:            cfg.Path(),
@@ -137,6 +133,8 @@ func newRWFolder(model *Model, cfg config.FolderConfiguration, ver versioner.Ver
 		errorsMut: sync.NewMutex(),
 
 		initialScanCompleted: make(chan struct{}),
+
+		ignoresChanged: false,
 	}
 
 	f.configureCopiersAndPullers(cfg)
@@ -186,15 +184,8 @@ func (f *rwFolder) Serve() {
 	}()
 
 	var prevSec int64
-	var prevIgnoreHash string
 
-	fswatcher.Tempnamer = defTempNamer
-	f.model.fmut.RLock()
-	fsWatcher := fswatcher.NewFsWatcher(f.dir, f.folderID,
-		f.model.folderIgnores[f.folderID],
-		f.model.folderCfgs[f.folderID].LongRescanIntervalS)
-	f.model.fmut.RUnlock()
-	fsWatchChan, err := fsWatcher.StartWatchingFilesystem()
+	fsWatchChan, err := f.fsWatcher.StartWatchingFilesystem()
 	if err != nil {
 		l.Warnf(`Folder "%s": Starting FS notifications failed: %s`, f.folderID, err)
 	}
@@ -219,18 +210,12 @@ func (f *rwFolder) Serve() {
 				continue
 			}
 
-			f.model.fmut.RLock()
-			curIgnores := f.model.folderIgnores[f.folderID]
-			f.model.fmut.RUnlock()
-
-			if newHash := curIgnores.Hash(); newHash != prevIgnoreHash {
+			if f.ignoresChanged {
 				// The ignore patterns have changed. We need to re-evaluate if
 				// there are files we need now that were ignored before.
-				l.Debugln(f, "ignore patterns have changed,",
-					"resetting prevVer and adapting FsWatcher")
+				l.Debugln(f, "ignore patterns have changed, resetting prevVer")
 				prevSec = 0
-				prevIgnoreHash = newHash
-				fsWatcher.UpdateIgnores(curIgnores)
+				f.ignoresChanged = false
 			}
 
 			// RemoteSequence() is a fast call, doesn't touch the database.
@@ -252,6 +237,10 @@ func (f *rwFolder) Serve() {
 			f.setState(FolderSyncing)
 			f.clearErrors()
 			tries := 0
+
+			f.model.fmut.RLock()
+			curIgnores := f.model.folderIgnores[f.folderID]
+			f.model.fmut.RUnlock()
 
 			for {
 				tries++
@@ -308,7 +297,7 @@ func (f *rwFolder) Serve() {
 		// same time.
 		case <-f.scan.timer.C:
 			err := f.scanSubdirsIfHealthy(nil)
-			f.scan.Reschedule()
+			f.Reschedule()
 			if err != nil {
 				continue
 			}
@@ -317,9 +306,6 @@ func (f *rwFolder) Serve() {
 			default:
 				l.Infoln("Completed initial scan (rw) of folder", f.folderID)
 				close(f.initialScanCompleted)
-				if fsWatcher.WatchingFs {
-					f.delayFullScan()
-				}
 			}
 
 		case req := <-f.scan.now:
@@ -346,8 +332,11 @@ func (f *rwFolder) IndexUpdated() {
 	}
 }
 
-func (f *rwFolder) delayFullScan() {
-	f.scan.LongReschedule()
+func (f *rwFolder) IgnoresChanged() {
+	f.model.fmut.RLock()
+	f.fsWatcher.UpdateIgnores(f.model.folderIgnores[f.folderID])
+	f.model.fmut.RUnlock()
+	f.ignoresChanged = true
 }
 
 func (f *rwFolder) String() string {

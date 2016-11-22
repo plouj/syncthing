@@ -49,6 +49,7 @@ type service interface {
 	BringToFront(string)
 	DelayScan(d time.Duration)
 	IndexUpdated()              // Remote index was updated notification
+	IgnoresChanged()            // Ignores changed notification
 	Jobs() ([]string, []string) // In progress, Queued
 	Scan(subs []string) error
 	Serve()
@@ -1721,8 +1722,10 @@ func (m *Model) internalScanFolderSubdirs(folder string, subDirs []string) error
 	oldHash := ignores.Hash()
 	defer func() {
 		if ignores.Hash() != oldHash {
-			l.Debugln("Folder", folder, "ignore patterns changed; triggering puller")
+			l.Debugln("Folder", folder, "ignore patterns changed;",
+				"triggering puller and adapt fswatcher")
 			runner.IndexUpdated()
+			runner.IgnoresChanged()
 		}
 	}()
 

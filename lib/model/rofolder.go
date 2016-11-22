@@ -22,14 +22,9 @@ type roFolder struct {
 	folder
 }
 
-func newROFolder(model *Model, config config.FolderConfiguration, _ versioner.Versioner, _ *fs.MtimeFS) service {
+func newROFolder(model *Model, cfg config.FolderConfiguration, _ versioner.Versioner, _ *fs.MtimeFS) service {
 	return &roFolder{
-		folder: folder{
-			stateTracker: newStateTracker(config.ID),
-			scan:         newFolderScanner(config),
-			stop:         make(chan struct{}),
-			model:        model,
-		},
+		folder: newFolder(model, cfg),
 	}
 }
 
@@ -41,6 +36,11 @@ func (f *roFolder) Serve() {
 		f.scan.timer.Stop()
 	}()
 
+	fsWatchChan, err := f.fsWatcher.StartWatchingFilesystem()
+	if err != nil {
+		l.Warnf(`Folder "%s": Starting FS notifications failed: %s`, f.folderID, err)
+	}
+
 	initialScanCompleted := false
 	for {
 		select {
@@ -50,7 +50,7 @@ func (f *roFolder) Serve() {
 		case <-f.scan.timer.C:
 			if err := f.model.CheckFolderHealth(f.folderID); err != nil {
 				l.Infoln("Skipping folder", f.folderID, "scan due to folder error:", err)
-				f.scan.Reschedule()
+				f.Reschedule()
 				continue
 			}
 
@@ -62,7 +62,7 @@ func (f *roFolder) Serve() {
 				// the same one as returned by CheckFolderHealth, though
 				// duplicate set is handled by setError.
 				f.setError(err)
-				f.scan.Reschedule()
+				f.Reschedule()
 				continue
 			}
 
@@ -75,13 +75,17 @@ func (f *roFolder) Serve() {
 				continue
 			}
 
-			f.scan.Reschedule()
+			f.Reschedule()
 
 		case req := <-f.scan.now:
 			req.err <- f.scanSubdirsIfHealthy(req.subdirs)
 
 		case next := <-f.scan.delay:
 			f.scan.timer.Reset(next)
+
+		case fsEvents := <-fsWatchChan:
+			l.Debugln(f, "filesystem notification rescan")
+			f.scanSubdirsIfHealthy(fsEvents.GetPaths())
 		}
 	}
 }
