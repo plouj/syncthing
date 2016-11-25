@@ -217,10 +217,14 @@ func (watcher *FsWatcher) aggregateEvent(path string, eventTime time.Time) {
 
 func (watcher *FsWatcher) actOnTimer() {
 	watcher.notifyTimerNeedsReset = true
-	if len(watcher.fsEvents) == 0 {
+	if len(watcher.fsEvents) > 0 {
+		watcher.notifyModelChan <- watcher.extractOldEvents()
+	} else {
 		watcher.slowDownNotifyTimer()
-		return
 	}
+}
+
+func (watcher *FsWatcher) extractOldEvents() FsEventsBatch {
 	oldFsEvents := make(FsEventsBatch)
 	if len(watcher.fsEvents) == maxFiles {
 		watcher.debugf("Too many changes, issuing full rescan.")
@@ -244,7 +248,7 @@ func (watcher *FsWatcher) actOnTimer() {
 			}
 		}
 	}
-	watcher.notifyModelChan <- oldFsEvents
+	return oldFsEvents
 }
 
 func (watcher *FsWatcher) events() []*FsEvent {
