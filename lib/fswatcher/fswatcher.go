@@ -31,7 +31,7 @@ type FsWatcher struct {
 	notifyModelChan chan<- FsEventsBatch
 	// All detected and to be scanned events.
 	fsEvents              FsEventsBatch
-	fsEventChan           <-chan notify.EventInfo
+	fsEventChan           chan notify.EventInfo
 	WatchingFs            bool
 	notifyDelay           time.Duration
 	slowNotifyDelay       time.Duration
@@ -43,6 +43,7 @@ type FsWatcher struct {
 	// Keeps track the events that are tracked within a directory for event
 	// aggregation. The directory itself is not (yet) to be scanned.
 	trackedDirs map[string]FsEventsBatch
+	stop        chan struct{}
 }
 
 const (
@@ -69,6 +70,7 @@ func NewFsWatcher(folderPath string, folderID string, ignores *ignore.Matcher,
 		folderID:              folderID,
 		ignores:               ignores,
 		trackedDirs:           make(map[string]FsEventsBatch),
+		stop:                  make(chan struct{}),
 	}
 }
 
@@ -109,7 +111,20 @@ func (watcher *FsWatcher) watchFilesystem() {
 			watcher.actOnTimer()
 		case event := <-inProgressItemSubscription.C():
 			watcher.updateInProgressSet(event)
+		case <-watcher.stop:
+			notify.Stop(watcher.fsEventChan)
+			return
 		}
+	}
+}
+
+func (watcher *FsWatcher) Stop() {
+	if watcher.WatchingFs {
+		watcher.WatchingFs = false
+		watcher.stop <- struct{}{}
+		l.Infoln(watcher, "Stopped FsWatcher")
+	} else {
+		l.Debugln(watcher, "FsWatcher isn't running, nothing to stop.")
 	}
 }
 
